@@ -9,15 +9,13 @@ import {
   DatabasePool,
   DatabaseTransactionConnection,
   IdentifierSqlToken,
-  MixedRow,
   PrimitiveValueExpression,
   QueryResult,
-  QueryResultRow,
+  QuerySqlToken,
   sql,
-  SqlSqlToken,
   UniqueIntegrityConstraintViolationError,
 } from 'slonik';
-import { ZodTypeAny, TypeOf, ZodObject } from 'zod';
+import { ZodTypeAny, ZodObject, z } from 'zod';
 import { LoggerPort } from '../ports/logger.port';
 import { ObjectLiteral } from '../types';
 
@@ -78,7 +76,7 @@ export abstract class SqlRepositoryBase<
 
   async delete(entity: Aggregate): Promise<boolean> {
     entity.validate();
-    const query = sql`DELETE FROM ${sql.identifier([
+    const query = sql.typeAlias('void')`DELETE FROM ${sql.identifier([
       this.tableName,
     ])} WHERE id = ${entity.id}`;
 
@@ -112,7 +110,7 @@ export abstract class SqlRepositoryBase<
       if (error instanceof UniqueIntegrityConstraintViolationError) {
         this.logger.debug(
           `[${RequestContextService.getRequestId()}] ${
-            (error.originalError as any).detail
+            (error.cause as any).detail
           }`,
         );
         throw new ConflictException('Record already exists', error);
@@ -127,20 +125,10 @@ export abstract class SqlRepositoryBase<
    * and does some debug logging.
    * For read queries use `this.pool` directly
    */
-  protected async writeQuery<T>(
-    sql: SqlSqlToken<
-      T extends MixedRow ? T : Record<string, PrimitiveValueExpression>
-    >,
+  protected async writeQuery<T extends ZodTypeAny>(
+    sql: QuerySqlToken<T>,
     entity: Aggregate | Aggregate[],
-  ): Promise<
-    QueryResult<
-      T extends MixedRow
-        ? T extends ZodTypeAny
-          ? TypeOf<ZodTypeAny & MixedRow & T>
-          : T
-        : T
-    >
-  > {
+  ): Promise<QueryResult<z.infer<T>>> {
     const entities = Array.isArray(entity) ? entity : [entity];
     entities.forEach((entity) => entity.validate());
     const entityIds = entities.map((e) => e.id);
@@ -168,9 +156,12 @@ export abstract class SqlRepositoryBase<
    * Passing object with { name: string, email: string } will generate
    * a query: INSERT INTO "table" (name, email) VALUES ($1, $2)
    */
-  protected generateInsertQuery(
-    models: DbModel[],
-  ): SqlSqlToken<QueryResultRow> {
+  protected generateInsertQuery(models: DbModel[]): Readonly<{
+    parser: ZodTypeAny;
+    type: 'SLONIK_TOKEN_QUERY';
+    sql: string;
+    values: PrimitiveValueExpression[];
+  }> {
     // TODO: generate query from an entire array to insert multiple records at once
     const entries = Object.entries(models[0]);
     const values: any = [];
@@ -187,11 +178,11 @@ export abstract class SqlRepositoryBase<
       }
     });
 
-    const query = sql`INSERT INTO ${sql.identifier([
+    const query = sql.typeAlias('void')`INSERT INTO ${sql.identifier([
       this.tableName,
-    ])} (${sql.join(propertyNames, sql`, `)}) VALUES (${sql.join(
+    ])} (${sql.join(propertyNames, sql.typeAlias('void')`, `)}) VALUES (${sql.join(
       values,
-      sql`, `,
+      sql.typeAlias('void')`, `,
     )})`;
 
     const parsedQuery = query;

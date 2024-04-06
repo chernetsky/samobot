@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:16.2-alpine3.19
+    restart: always
+    shm_size: 128mb
+    env_file:
+      - ./.env
+    ports:
+      - ${POSTGRES_PORT}:5432
+    # environment:git
+    #   - POSTGRES_USER
+    #   - POSTGRES_PASSWORD
+    #   - POSTGRES_DB
+
+  # samometer:
+  #   build: .
+  #   environment:
+  #     - DATABASE_URL
+  #     - BOT_TOKEN
+  #   extra_hosts:
+  #     - host.docker.internal:host-gateway # даёт доступ к базе на localhost (host.docker.internal)
+  #   deploy:
+  #     restart_policy:
+  #       condition: on-failure
+  #       delay: 5s
+  #       max_attempts: 5
+  #       # window: 120s
